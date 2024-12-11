@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pytest-BDD Scenario Generator</title>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .fixture { margin: 5px 0; }
+        .selected { background-color: #e0e0e0; }
+        .scenario-section { margin: 20px 0; }
+        .drop-area { border: 1px solid #ccc; padding: 10px; min-height: 50px; }
+    </style>
+</head>
+<body>
+    <h1>Pytest-BDD Scenario Generator</h1>
+    <div x-data="scenarioApp()" x-init="init()">
+        <h2>Available Fixtures</h2>
+        <button @click="scanFixtures">Scan Fixtures</button>
+        <ul>
+            <template x-for="(fixture, index) in fixtures" :key="fixture">
+                <li class="fixture-details" draggable="true"
+                     @dragstart="event.dataTransfer.setData('text/plain', index)"
+                     @dragover.prevent
+                     @drop="let fromIndex = event.dataTransfer.getData('text/plain');
+                            let toIndex = index;
+                            if (fromIndex !== toIndex) {
+                                let item = fixtures.splice(fromIndex, 1)[0];
+                                fixtures.splice(toIndex, 0, item);
+                            }">
+                    <label :for="fixture" x-text="fixture"></label>
+                </li>
+            </template>
+        </ul>
+
+        <h2>Configure Scenario</h2>
+        <div class="scenario-section">
+            <h3>Given</h3>
+            <div class="drop-area" @dragover.prevent @drop="addToSection('given', event)">
+                <template x-for="(step, idx) in given" :key="step + idx">
+                    <div x-text="step"></div>
+                </template>
+            </div>
+        </div>
+
+        <div class="scenario-section">
+            <h3>When</h3>
+            <div class="drop-area" @dragover.prevent @drop="addToSection('when', event)">
+                <template x-for="(step, idx) in when" :key="step + idx">
+                    <div x-text="step"></div>
+                </template>
+            </div>
+        </div>
+
+        <div class="scenario-section">
+            <h3>Then</h3>
+            <div class="drop-area" @dragover.prevent @drop="addToSection('then', event)">
+                <template x-for="(step, idx) in then" :key="step + idx">
+                    <div x-text="step"></div>
+                </template>
+            </div>
+        </div>
+
+        <button @click="runTests">Run Tests</button>
+        <button @click="generateFeature">Generate Feature File</button>
+        <button @click="generateTests">Generate Test File</button>
+    </div>
+
+    <script>
+        function scenarioApp() {
+            return {
+                fixtures: [],
+                given: [],
+                when: [],
+                then: [],
+                init() {
+                    this.fixtures = ['setup', 'test', 'teardown'];
+                },
+                scanFixtures() {
+                    fetch("http://localhost:8000/scan-fixtures").then(response => {
+                        if (response.ok) {
+                            response.json().then(data => {
+                                this.fixtures = data.fixtures;
+                            });
+                        }
+                    });
+                },
+                addToSection(section, event) {
+                    let index = parseInt(event.dataTransfer.getData('text/plain'), 10);
+                    if (index >= 0 && index < this.fixtures.length) {
+                        let fixture = this.fixtures[index];
+                        this[section].push(fixture);
+                        console.log(`Added ${fixture} to ${section}`);
+                    } else {
+                        console.error('Invalid index:', index);
+                    }
+                },
+                generateFeature() {
+                    const formatStep = (step) => {
+                        if (typeof step === 'string') {
+                            const parts = step.split(',');
+                            return parts.length > 1 ? parts[1] : step;
+                        }
+                        return step;
+                    };
+
+                    const featureContent = `Feature: Generated Scenario\n\n` +
+                        `  Scenario: User configured scenario\n` +
+                        this.given.map(step => `    Given ${formatStep(step)}`).join('\n') + '\n' +
+                        this.when.map(step => `    When ${formatStep(step)}`).join('\n') + '\n' +
+                        this.then.map(step => `    Then ${formatStep(step)}`).join('\n');
+
+                    console.log('Given steps:', this.given);
+                    console.log('When steps:', this.when);
+                    console.log('Then steps:', this.then);
+                    console.log('Feature content:', featureContent);
+
+                    const requestData = {
+                        fixtures: {
+                            given: this.given,
+                            when: this.when,
+                            then: this.then
+                        },
+                        content: featureContent,
+                        directory: "user_app" // Specify the directory to scan
+                    };
+
+                    fetch('http://localhost:8000/generate-feature', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestData)
+                    }).then(response => {
+                        if (response.ok) {
+                            alert('Feature file generated successfully!');
+                        } else {
+                            alert('Failed to generate feature file.');
+                        }
+                    });
+                },
+                generateTests() {
+                    const requestData = {
+                        fixtures: {
+                            given: this.given.map(fixture => [fixture, true]),
+                            when: this.when.map(fixture => [fixture, true]),
+                            then: this.then.map(fixture => [fixture, true])
+                        },
+                        content: "Generated feature content",
+                        directory: "user_app" // Specify the directory to scan
+                    };
+
+                    fetch('http://localhost:8000/generate-tests', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestData)
+                    }).then(response => {
+                        if (response.ok) {
+                            alert('Test file generated successfully!');
+                        } else {
+                            response.json().then(error => console.error('Error:', error));
+                            alert('Failed to generate test file.');
+                        }
+                    });
+                },
+                runTests() {
+                    alert('Running tests with configured scenario');
+                }
+            };
+        }
+    </script>
+
+</body>
+</html>
